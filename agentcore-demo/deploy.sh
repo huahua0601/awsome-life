@@ -151,12 +151,13 @@ echo "Test via AgentCore console:"
 echo "  https://${AWS_DEFAULT_REGION}.console.aws.amazon.com/bedrock-agentcore/agents"
 echo ""
 echo "Or invoke via CLI:"
-echo '  RUNTIME_ID=$(aws cloudformation describe-stacks \'
+echo '  RUNTIME_ARN=$(aws cloudformation describe-stacks \'
 echo '    --stack-name AgentCoreDemoStack \'
-echo "    --query 'Stacks[0].Outputs[?OutputKey==\`RuntimeId\`].OutputValue' \\"
+echo "    --query 'Stacks[0].Outputs[?OutputKey==\`RuntimeArn\`].OutputValue' \\"
 echo '    --output text)'
 echo ""
-echo '  aws bedrock-agentcore invoke-runtime-endpoint \'
-echo '    --runtime-id $RUNTIME_ID \'
-echo '    --endpoint-name claude_opus_agent_endpoint \'
-echo "    --payload '{\"prompt\": \"你好，请介绍一下你自己\"}'"
+echo '  aws bedrock-agentcore invoke-agent-runtime \'
+echo '    --agent-runtime-arn $RUNTIME_ARN \'
+echo '    --qualifier claude_opus_agent_endpoint \'
+echo "    --payload '{\"prompt\": \"你好，请介绍一下你自己\"}' \\"
+echo '    /dev/stdout'
