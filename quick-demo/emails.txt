@@ -1,0 +1,9 @@
+# QuickSight 批量开通 — 示例邮件列表
+# 每行一个邮箱地址，# 开头为注释
+
+alice@example.com
+bob@example.com
+
+# --- 分析师团队 ---
+analyst1@example.com
+analyst2@example.com

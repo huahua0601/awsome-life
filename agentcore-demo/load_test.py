@@ -44,15 +44,6 @@ PROMPTS = [
     "用Python写一个简单的反向传播示例。",
     "用5个要点分析DynamoDB的分区策略。",
     "用5句话解释OAuth 2.0的Authorization Code Flow。",
-    "用5个要点对比REST和GraphQL。",
-    "用5句话解释大语言模型的训练流程。",
-    "用5个要点对比AWS Lambda和ECS。",
-    "用Python写一个简单的堆排序实现。",
-    "用5句话解释CAP定理及其影响。",
-    "用Python写一个简单的生产者消费者模式。",
-    "用5个要点解释Docker容器化的优势。",
-    "用5句话解释向量数据库的工作原理。",
-    "用Python写一个简单的链表反转算法。",
 ]
 
 
