@@ -184,10 +184,11 @@ def main():
     total_cost = 0.0
     call_count = 0
     error_count = 0
+    all_sessions = {session_id} if session_id else set()
     start_time = time.time()
 
     print(f"\n  开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Session: {session_id}\n")
+    print(f"  模式: 每次调用独立 session (无状态)\n")
 
     try:
         while total_cost < target_usd:
@@ -195,9 +196,9 @@ def main():
             call_count += 1
 
             try:
-                data, new_sid = invoke_once(client, prompt, runtime_arn, session_id)
+                data, new_sid = invoke_once(client, prompt, runtime_arn)
                 if new_sid:
-                    session_id = new_sid
+                    all_sessions.add(new_sid)
 
                 usage = data.get("usage", {})
                 cost_info = data.get("cost", {})
@@ -254,8 +255,9 @@ def main():
         print(f"  Burn rate:      ${total_cost / elapsed * 3600:,.2f}/hr")
     print("=" * 64)
 
-    print("\n  正在停止 session 释放资源...")
-    stop_session(client, runtime_arn, session_id)
+    print("\n  正在停止 sessions 释放资源...")
+    for sid in all_sessions:
+        stop_session(client, runtime_arn, sid)
 
 
 if __name__ == "__main__":
