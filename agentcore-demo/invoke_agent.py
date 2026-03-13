@@ -1,5 +1,7 @@
 """调用 AgentCore Runtime 上的 Claude Opus 4.6 Agent。
 
+参考: https://github.com/awslabs/amazon-bedrock-agentcore-samples
+
 用法:
     python invoke_agent.py "你好，请介绍一下你自己"
     python invoke_agent.py                              # 进入交互式对话模式
@@ -14,7 +16,6 @@ import json
 import os
 import sys
 import time
-import uuid
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -24,8 +25,8 @@ REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
 ENDPOINT_NAME = os.environ.get("ENDPOINT_NAME", "claude_opus_agent_endpoint")
 STACK_NAME = "AgentCoreDemoStack"
 
-MAX_RETRIES = 5
-RETRY_DELAY_SECS = 10
+MAX_RETRIES = 8
+RETRY_DELAY_SECS = 15
 
 
 def get_runtime_arn():
@@ -34,66 +35,100 @@ def get_runtime_arn():
     if arn:
         return arn
 
-    print("  正在从 CloudFormation 获取 Runtime ARN...", flush=True)
+    print("  正在从 CloudFormation 获取 Runtime ARN...")
     cf = boto3.client("cloudformation", region_name=REGION)
     try:
         resp = cf.describe_stacks(StackName=STACK_NAME)
         for output in resp["Stacks"][0].get("Outputs", []):
             if output["OutputKey"] == "RuntimeArn":
                 arn = output["OutputValue"]
-                print(f"  Runtime ARN: {arn}", flush=True)
+                print(f"  Runtime ARN: {arn}")
                 return arn
-    except Exception as e:
+    except Exception:
         pass
 
     print(f"  错误: 无法从 stack '{STACK_NAME}' 获取 RuntimeArn。请设置环境变量 RUNTIME_ARN。")
     sys.exit(1)
 
 
-def invoke_agent(prompt: str, session_id: str | None = None, runtime_arn: str | None = None) -> tuple[dict, str]:
-    """向 AgentCore Runtime 发送请求，返回完整响应 dict 和 session_id。"""
-    if runtime_arn is None:
-        runtime_arn = get_runtime_arn()
-    client = boto3.client("bedrock-agentcore", region_name=REGION)
+def read_response(resp):
+    """从 invoke_agent_runtime 响应中读取 payload (兼容 EventStream 和普通响应)。"""
+    content_type = resp.get("contentType", "")
 
-    if session_id is None:
-        session_id = str(uuid.uuid4())
+    if "text/event-stream" in content_type:
+        parts = []
+        for line in resp["response"].iter_lines(chunk_size=1):
+            if line:
+                decoded = line.decode("utf-8")
+                if decoded.startswith("data: "):
+                    parts.append(decoded[6:])
+        raw = "".join(parts)
+    else:
+        try:
+            events = []
+            for event in resp.get("response", []):
+                if isinstance(event, bytes):
+                    events.append(event.decode("utf-8"))
+                else:
+                    events.append(str(event))
+            raw = "".join(events)
+        except Exception:
+            raw = resp["response"].read().decode("utf-8")
 
-    payload = json.dumps({"prompt": prompt}).encode("utf-8")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"result": raw}
+
+
+def invoke_agent(client, prompt, runtime_arn, session_id=None):
+    """向 AgentCore Runtime 发送请求，返回 (data_dict, runtime_session_id)。"""
+    kwargs = {
+        "agentRuntimeArn": runtime_arn,
+        "qualifier": ENDPOINT_NAME,
+        "payload": json.dumps({"prompt": prompt}),
+    }
+    if session_id:
+        kwargs["runtimeSessionId"] = session_id
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.invoke_agent_runtime(
-                agentRuntimeArn=runtime_arn,
-                qualifier=ENDPOINT_NAME,
-                runtimeSessionId=session_id,
-                contentType="application/json",
-                accept="application/json",
-                payload=payload,
-            )
-            break
-        except client.exceptions.RuntimeClientError as e:
-            error_msg = str(e)
-            is_cold_start = "initialization time exceeded" in error_msg.lower()
-            is_502 = "502" in error_msg
-            if (is_cold_start or is_502) and attempt < MAX_RETRIES:
-                print(f"  Runtime 启动中... 第 {attempt}/{MAX_RETRIES} 次重试 (等待 {RETRY_DELAY_SECS}s)")
-                time.sleep(RETRY_DELAY_SECS)
+            resp = client.invoke_agent_runtime(**kwargs)
+            runtime_session_id = resp.get("runtimeSessionId", session_id)
+            data = read_response(resp)
+            return data, runtime_session_id
+        except (client.exceptions.RuntimeClientError, Exception) as e:
+            msg = str(e)
+            is_retryable = any(s in msg.lower() for s in [
+                "initialization time exceeded", "502", "503",
+                "throttl", "timeout", "service unavailable",
+            ])
+            if is_retryable and attempt < MAX_RETRIES:
+                wait = RETRY_DELAY_SECS * attempt
+                print(f"  Runtime 启动中... 第 {attempt}/{MAX_RETRIES} 次重试 (等待 {wait}s)")
+                time.sleep(wait)
             else:
                 raise
 
-    session_id = response.get("runtimeSessionId", session_id)
-    raw = response["response"].read().decode("utf-8")
+    return {}, session_id
 
+
+def stop_session(client, runtime_arn, session_id):
+    """停止 runtime session 以释放 microVM 资源。"""
+    if not session_id:
+        return
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = {"result": raw}
+        client.stop_runtime_session(
+            agentRuntimeArn=runtime_arn,
+            runtimeSessionId=session_id,
+            qualifier=ENDPOINT_NAME,
+        )
+        print(f"  Session 已停止: {session_id}")
+    except Exception as e:
+        print(f"  停止 session 失败 (可忽略): {e}")
 
-    return data, session_id
 
-
-def extract_text(data: dict) -> str:
+def extract_text(data):
     """从响应 data 中提取纯文本回复。"""
     result = data.get("result", data.get("output", ""))
     if isinstance(result, dict):
@@ -103,7 +138,7 @@ def extract_text(data: dict) -> str:
     return str(result)
 
 
-def print_usage(data: dict):
+def print_usage(data):
     """打印 token 用量和费用信息。"""
     usage = data.get("usage")
     cost = data.get("cost")
@@ -123,19 +158,15 @@ def print_usage(data: dict):
     print("-" * 50)
 
 
-def interactive_mode(runtime_arn=None):
+def interactive_mode(client, runtime_arn):
     """交互式多轮对话模式。"""
-    if runtime_arn is None:
-        runtime_arn = get_runtime_arn()
     print("=" * 50)
     print("  AgentCore Claude Opus 4.6 交互式对话")
     print("  输入 'quit' 或 'exit' 退出")
     print("=" * 50)
     print()
 
-    session_id = str(uuid.uuid4())
-    print(f"Session: {session_id}\n")
-
+    session_id = None
     while True:
         try:
             prompt = input("你: ").strip()
@@ -150,26 +181,31 @@ def interactive_mode(runtime_arn=None):
             break
 
         try:
-            data, session_id = invoke_agent(prompt, session_id, runtime_arn=runtime_arn)
+            data, session_id = invoke_agent(client, prompt, runtime_arn, session_id)
             text = extract_text(data)
             print(f"\nAgent: {text}\n")
             print_usage(data)
         except Exception as e:
             print(f"\n错误: {e}\n")
 
+    stop_session(client, runtime_arn, session_id)
+
 
 def main():
     runtime_arn = get_runtime_arn()
+    client = boto3.client("bedrock-agentcore", region_name=REGION)
+
     if len(sys.argv) > 1:
         prompt = " ".join(sys.argv[1:])
         print(f"Prompt: {prompt}\n")
-        data, session_id = invoke_agent(prompt, runtime_arn=runtime_arn)
+        data, session_id = invoke_agent(client, prompt, runtime_arn)
         text = extract_text(data)
         print(f"Response:\n{text}\n")
         print_usage(data)
         print(f"Session ID: {session_id}")
+        stop_session(client, runtime_arn, session_id)
     else:
-        interactive_mode(runtime_arn)
+        interactive_mode(client, runtime_arn)
 
 
 if __name__ == "__main__":
