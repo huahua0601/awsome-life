@@ -63,11 +63,14 @@ if ! command -v cdk >/dev/null 2>&1; then
     npm install -g aws-cdk
 fi
 
-# uv
+# uv (optional — falls back to pip for cross-platform builds)
 if ! command -v uv >/dev/null 2>&1; then
-    echo ">>> Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+    echo ">>> Attempting to install uv..."
+    if curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null; then
+        export PATH="$HOME/.local/bin:$PATH"
+    else
+        echo "    uv not available for this platform — will use pip instead"
+    fi
 fi
 
 # zip
