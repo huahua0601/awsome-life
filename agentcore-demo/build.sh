@@ -17,19 +17,33 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
+# Privilege escalation helper
+_sudo() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then
+        doas "$@"
+    else
+        echo "Warning: no sudo/doas found and not root — trying without privilege escalation..."
+        "$@"
+    fi
+}
+
 # Auto-install zip if missing
 if ! command -v zip >/dev/null 2>&1; then
     echo ">>> Installing zip..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get install -y -qq zip
+    if command -v pkg >/dev/null 2>&1; then
+        _sudo pkg install -y zip
+    elif command -v apt-get >/dev/null 2>&1; then
+        _sudo apt-get install -y -qq zip
     elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y zip
+        _sudo yum install -y zip
     elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y zip
+        _sudo dnf install -y zip
     elif command -v brew >/dev/null 2>&1; then
         brew install zip
-    elif command -v pkg >/dev/null 2>&1; then
-        sudo pkg install -y zip
     else
         echo "Error: zip not found and cannot auto-install. Please install it manually."
         exit 1

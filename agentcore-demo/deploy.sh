@@ -7,21 +7,35 @@ echo "=========================================="
 echo "  AgentCore Demo - Build & Deploy"
 echo "=========================================="
 
+# --- Privilege escalation helper (sudo / doas / root) ----------------------
+_sudo() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then
+        doas "$@"
+    else
+        echo "Warning: no sudo/doas found and not root — trying without privilege escalation..."
+        "$@"
+    fi
+}
+
 # --- Auto-install prerequisites -------------------------------------------
 
 # Node.js & npm
 if ! command -v node >/dev/null 2>&1; then
     echo ">>> Installing Node.js..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm
+    if command -v pkg >/dev/null 2>&1; then
+        _sudo pkg install -y node npm
+    elif command -v apt-get >/dev/null 2>&1; then
+        _sudo apt-get update -qq && _sudo apt-get install -y -qq nodejs npm
     elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y nodejs npm
+        _sudo yum install -y nodejs npm
     elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y nodejs npm
+        _sudo dnf install -y nodejs npm
     elif command -v brew >/dev/null 2>&1; then
         brew install node
-    elif command -v pkg >/dev/null 2>&1; then
-        sudo pkg install -y node npm
     else
         curl -fsSL https://fnm.vercel.app/install | bash
         export PATH="$HOME/.local/share/fnm:$PATH"
@@ -39,7 +53,7 @@ if ! command -v aws >/dev/null 2>&1; then
         pip install awscli --quiet
     else
         curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
-        unzip -qo /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip
+        unzip -qo /tmp/awscliv2.zip -d /tmp && _sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip
     fi
 fi
 
@@ -59,32 +73,32 @@ fi
 # zip
 if ! command -v zip >/dev/null 2>&1; then
     echo ">>> Installing zip..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get install -y -qq zip
+    if command -v pkg >/dev/null 2>&1; then
+        _sudo pkg install -y zip
+    elif command -v apt-get >/dev/null 2>&1; then
+        _sudo apt-get install -y -qq zip
     elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y zip
+        _sudo yum install -y zip
     elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y zip
+        _sudo dnf install -y zip
     elif command -v brew >/dev/null 2>&1; then
         brew install zip
-    elif command -v pkg >/dev/null 2>&1; then
-        sudo pkg install -y zip
     fi
 fi
 
 # Python 3
 if ! command -v python3 >/dev/null 2>&1; then
     echo ">>> Installing Python 3..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get install -y -qq python3 python3-venv
+    if command -v pkg >/dev/null 2>&1; then
+        _sudo pkg install -y python3
+    elif command -v apt-get >/dev/null 2>&1; then
+        _sudo apt-get install -y -qq python3 python3-venv
     elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y python3
+        _sudo yum install -y python3
     elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y python3
+        _sudo dnf install -y python3
     elif command -v brew >/dev/null 2>&1; then
         brew install python
-    elif command -v pkg >/dev/null 2>&1; then
-        sudo pkg install -y python3
     fi
 fi
 
