@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -7,13 +7,93 @@ echo "=========================================="
 echo "  AgentCore Demo - Build & Deploy"
 echo "=========================================="
 
-# Check prerequisites
-command -v aws >/dev/null 2>&1 || { echo "Error: aws CLI not found"; exit 1; }
-command -v cdk >/dev/null 2>&1 || { echo "Error: cdk not found. Run: npm install -g aws-cdk"; exit 1; }
-command -v uv >/dev/null 2>&1  || { echo "Error: uv not found. Run: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
+# --- Auto-install prerequisites -------------------------------------------
 
+# Node.js & npm
+if ! command -v node >/dev/null 2>&1; then
+    echo ">>> Installing Node.js..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y nodejs npm
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y nodejs npm
+    elif command -v brew >/dev/null 2>&1; then
+        brew install node
+    elif command -v pkg >/dev/null 2>&1; then
+        sudo pkg install -y node npm
+    else
+        curl -fsSL https://fnm.vercel.app/install | bash
+        export PATH="$HOME/.local/share/fnm:$PATH"
+        eval "$(fnm env)"
+        fnm install --lts
+    fi
+fi
+
+# AWS CLI
+if ! command -v aws >/dev/null 2>&1; then
+    echo ">>> Installing AWS CLI..."
+    if command -v pip3 >/dev/null 2>&1; then
+        pip3 install awscli --quiet
+    elif command -v pip >/dev/null 2>&1; then
+        pip install awscli --quiet
+    else
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+        unzip -qo /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip
+    fi
+fi
+
+# AWS CDK
+if ! command -v cdk >/dev/null 2>&1; then
+    echo ">>> Installing AWS CDK..."
+    npm install -g aws-cdk
+fi
+
+# uv
+if ! command -v uv >/dev/null 2>&1; then
+    echo ">>> Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# zip
+if ! command -v zip >/dev/null 2>&1; then
+    echo ">>> Installing zip..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y -qq zip
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y zip
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y zip
+    elif command -v brew >/dev/null 2>&1; then
+        brew install zip
+    elif command -v pkg >/dev/null 2>&1; then
+        sudo pkg install -y zip
+    fi
+fi
+
+# Python 3
+if ! command -v python3 >/dev/null 2>&1; then
+    echo ">>> Installing Python 3..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y -qq python3 python3-venv
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y python3
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y python3
+    elif command -v brew >/dev/null 2>&1; then
+        brew install python
+    elif command -v pkg >/dev/null 2>&1; then
+        sudo pkg install -y python3
+    fi
+fi
+
+# --- Verify AWS credentials -----------------------------------------------
 export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-west-2}
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null) || {
+    echo "Error: AWS credentials not configured. Run: aws configure"
+    exit 1
+}
 
 echo ""
 echo "Account:  $ACCOUNT_ID"
@@ -22,11 +102,12 @@ echo "Model:    global.anthropic.claude-opus-4-6-v1"
 echo "Deploy:   S3 direct code"
 echo ""
 
-# Step 1: Build deployment package
+# --- Step 1: Build deployment package -------------------------------------
 echo ">>> Step 1: Building ARM64 deployment package..."
+export PATH="$HOME/.local/bin:$PATH"
 bash "$SCRIPT_DIR/build.sh"
 
-# Step 2: Set up CDK virtual environment
+# --- Step 2: Set up CDK virtual environment --------------------------------
 if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     echo ">>> Creating Python virtual environment for CDK..."
     python3 -m venv "$SCRIPT_DIR/.venv"
@@ -34,11 +115,11 @@ fi
 source "$SCRIPT_DIR/.venv/bin/activate"
 pip install -r "$SCRIPT_DIR/requirements.txt" -q
 
-# Step 3: Bootstrap CDK
+# --- Step 3: Bootstrap CDK ------------------------------------------------
 echo ">>> Step 2: Bootstrapping CDK..."
 cdk bootstrap aws://$ACCOUNT_ID/$AWS_DEFAULT_REGION
 
-# Step 4: Deploy
+# --- Step 4: Deploy -------------------------------------------------------
 echo ">>> Step 3: Deploying AgentCore stack..."
 cdk deploy AgentCoreDemoStack --require-approval never
 

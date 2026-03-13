@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,23 +10,45 @@ echo "=========================================="
 echo "  Building ARM64 deployment package"
 echo "=========================================="
 
+# Auto-install uv if missing
+if ! command -v uv >/dev/null 2>&1; then
+    echo ">>> Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Auto-install zip if missing
+if ! command -v zip >/dev/null 2>&1; then
+    echo ">>> Installing zip..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y -qq zip
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y zip
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y zip
+    elif command -v brew >/dev/null 2>&1; then
+        brew install zip
+    elif command -v pkg >/dev/null 2>&1; then
+        sudo pkg install -y zip
+    else
+        echo "Error: zip not found and cannot auto-install. Please install it manually."
+        exit 1
+    fi
+fi
+
 # Clean
 rm -rf "$STAGING_DIR" "$DIST_DIR"
 mkdir -p "$STAGING_DIR" "$DIST_DIR"
 
-# Install ARM64 dependencies using uv pip
+# Install ARM64 dependencies
 echo ">>> Installing ARM64 dependencies..."
-if command -v uv >/dev/null 2>&1; then
-    uv pip install \
-        --python-platform aarch64-manylinux2014 \
-        --python-version 3.13 \
-        --target="$STAGING_DIR" \
-        --only-binary=:all: \
-        -r "$AGENT_DIR/requirements.txt"
-else
-    echo "Error: uv is required. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh"
-    exit 1
-fi
+export PATH="$HOME/.local/bin:$PATH"
+uv pip install \
+    --python-platform aarch64-manylinux2014 \
+    --python-version 3.13 \
+    --target="$STAGING_DIR" \
+    --only-binary=:all: \
+    -r "$AGENT_DIR/requirements.txt"
 
 # Copy agent source code
 echo ">>> Copying agent source code..."
