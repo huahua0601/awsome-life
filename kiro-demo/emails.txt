@@ -1,5 +1,3 @@
 # Kiro 批量开通 — 示例邮件列表
 # 每行一个邮箱地址，# 开头为注释
-dongweicl@163.com
-dongwei.telecom@gmail.com
 38651850@qq.com
