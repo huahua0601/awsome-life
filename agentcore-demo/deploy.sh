@@ -47,7 +47,9 @@ fi
 # AWS CLI
 if ! command -v aws >/dev/null 2>&1; then
     echo ">>> Installing AWS CLI..."
-    if command -v pip3 >/dev/null 2>&1; then
+    if python3 -m pip --version >/dev/null 2>&1; then
+        python3 -m pip install awscli --quiet
+    elif command -v pip3 >/dev/null 2>&1; then
         pip3 install awscli --quiet
     elif command -v pip >/dev/null 2>&1; then
         pip install awscli --quiet

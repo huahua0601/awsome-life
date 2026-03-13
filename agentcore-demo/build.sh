@@ -69,7 +69,16 @@ if command -v uv >/dev/null 2>&1; then
         -r "$AGENT_DIR/requirements.txt"
 else
     echo "    (using pip fallback for cross-platform install)"
-    pip3 install \
+    PIP="python3 -m pip"
+    # Ensure pip module is available
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        echo ">>> Installing pip..."
+        python3 -m ensurepip --default-pip 2>/dev/null || {
+            curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+            python3 /tmp/get-pip.py --quiet && rm -f /tmp/get-pip.py
+        }
+    fi
+    $PIP install \
         --platform manylinux2014_aarch64 \
         --python-version 3.13 \
         --implementation cp \
@@ -77,8 +86,7 @@ else
         --target="$STAGING_DIR" \
         --no-deps \
         -r "$AGENT_DIR/requirements.txt"
-    # pip --no-deps won't resolve transitive deps, install them explicitly
-    pip3 install \
+    $PIP install \
         --platform manylinux2014_aarch64 \
         --python-version 3.13 \
         --implementation cp \
