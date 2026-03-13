@@ -122,7 +122,7 @@ echo ""
 # --- Step 1: Build deployment package -------------------------------------
 echo ">>> Step 1: Building ARM64 deployment package..."
 export PATH="$HOME/.local/bin:$PATH"
-bash "$SCRIPT_DIR/build.sh"
+sh "$SCRIPT_DIR/build.sh"
 
 # --- Step 2: Set up CDK virtual environment --------------------------------
 if [ ! -d "$SCRIPT_DIR/.venv" ]; then
