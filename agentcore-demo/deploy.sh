@@ -131,7 +131,7 @@ if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     echo ">>> Creating Python virtual environment for CDK..."
     python3 -m venv "$SCRIPT_DIR/.venv"
 fi
-source "$SCRIPT_DIR/.venv/bin/activate"
+. "$SCRIPT_DIR/.venv/bin/activate"
 pip install -r "$SCRIPT_DIR/requirements.txt" -q
 
 # --- Step 3: Bootstrap CDK ------------------------------------------------
