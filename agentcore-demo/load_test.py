@@ -5,21 +5,51 @@
 用法:
     python load_test.py                     # 默认 $500
     python load_test.py --target-usd 200    # 自定义金额
+
+环境变量 (可选):
+    RUNTIME_ARN          覆盖自动检测的 Runtime ARN
+    ENDPOINT_NAME        覆盖 endpoint 名称 (默认 claude_opus_agent_endpoint)
+    AWS_DEFAULT_REGION   覆盖 region (默认 us-west-2)
 """
 
 import json
+import os
 import sys
 import time
 import uuid
 
+sys.stdout.reconfigure(line_buffering=True)
+
 import boto3
 
-REGION = "us-west-2"
-RUNTIME_ARN = "arn:aws:bedrock-agentcore:us-west-2:715371302281:runtime/claude_opus_agent-TL1Wj879JO"
-ENDPOINT_NAME = "claude_opus_agent_endpoint"
+REGION = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+ENDPOINT_NAME = os.environ.get("ENDPOINT_NAME", "claude_opus_agent_endpoint")
+STACK_NAME = "AgentCoreDemoStack"
 
 MAX_RETRIES = 5
 RETRY_DELAY_SECS = 10
+
+
+def get_runtime_arn():
+    """从环境变量或 CloudFormation stack 输出获取 Runtime ARN。"""
+    arn = os.environ.get("RUNTIME_ARN")
+    if arn:
+        return arn
+
+    print("  正在从 CloudFormation 获取 Runtime ARN...", flush=True)
+    cf = boto3.client("cloudformation", region_name=REGION)
+    try:
+        resp = cf.describe_stacks(StackName=STACK_NAME)
+        for output in resp["Stacks"][0].get("Outputs", []):
+            if output["OutputKey"] == "RuntimeArn":
+                arn = output["OutputValue"]
+                print(f"  Runtime ARN: {arn}", flush=True)
+                return arn
+    except Exception as e:
+        pass
+
+    print(f"  错误: 无法从 stack '{STACK_NAME}' 获取 RuntimeArn。请设置环境变量 RUNTIME_ARN。")
+    sys.exit(1)
 
 INPUT_PRICE_PER_TOKEN = 5.0 / 1_000_000
 OUTPUT_PRICE_PER_TOKEN = 25.0 / 1_000_000
@@ -43,13 +73,13 @@ PROMPTS = [
 ]
 
 
-def invoke_once(client, prompt, session_id):
+def invoke_once(client, prompt, session_id, runtime_arn):
     payload = json.dumps({"prompt": prompt}).encode("utf-8")
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = client.invoke_agent_runtime(
-                agentRuntimeArn=RUNTIME_ARN,
+                agentRuntimeArn=runtime_arn,
                 qualifier=ENDPOINT_NAME,
                 runtimeSessionId=session_id,
                 contentType="application/json",
@@ -84,6 +114,7 @@ def main():
         print("  已取消。")
         return
 
+    runtime_arn = get_runtime_arn()
     client = boto3.client("bedrock-agentcore", region_name=REGION)
     session_id = str(uuid.uuid4())
 
@@ -103,7 +134,7 @@ def main():
             call_count += 1
 
             try:
-                data = invoke_once(client, prompt, session_id)
+                data = invoke_once(client, prompt, session_id, runtime_arn)
                 usage = data.get("usage", {})
                 cost_info = data.get("cost", {})
                 inp = usage.get("input_tokens", 0)
